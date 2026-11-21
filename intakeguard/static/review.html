@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IntakeGuard · Review queue</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1b1f24; --muted:#5d6670; --line:#e3e6ea; --accent:#2457d6;
+          --warn:#b25e00; --warn-bg:#fff4e5; --ok:#1d7a46; --ok-bg:#e8f6ee; --bad:#b4232a; --bad-bg:#fdecec; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; gap:16px; padding:14px 24px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; }
+  header .tag { color:var(--muted); }
+  form.login { display:flex; gap:8px; margin-left:auto; }
+  input, select, button { font:inherit; padding:7px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  main { display:grid; grid-template-columns: minmax(420px, 1fr) minmax(360px, 460px); gap:16px; padding:16px 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .toolbar { display:flex; gap:8px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); }
+  .toolbar .count { margin-left:auto; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover, tbody tr.sel { background:#f0f4ff; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; margin:1px 4px 1px 0; }
+  .pill.review { background:var(--warn-bg); color:var(--warn); }
+  .pill.ready { background:var(--ok-bg); color:var(--ok); }
+  .pill.filed { background:#eef1f5; color:var(--muted); }
+  .pill.inject { background:var(--bad-bg); color:var(--bad); }
+  .muted { color:var(--muted); }
+  .detail { padding:16px; }
+  .detail h2 { margin:0 0 4px; font-size:16px; }
+  dl { display:grid; grid-template-columns: 130px 1fr; gap:6px 12px; margin:14px 0; }
+  dt { color:var(--muted); }
+  dd { margin:0; }
+  .actions { display:flex; gap:8px; align-items:center; margin:12px 0 18px; }
+  .msg { font-size:13px; }
+  .msg.err { color:var(--bad); }
+  .msg.ok { color:var(--ok); }
+  ol.audit { margin:0; padding-left:18px; }
+  ol.audit li { margin-bottom:6px; }
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  code { font-size:12px; background:#f1f3f5; padding:1px 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>IntakeGuard</h1><span class="tag">Review queue · the model proposes, a person approves</span>
+  <form class="login" id="login">
+    <select id="tenant" aria-label="Tenant">
+      <option value="northwind-legal">northwind-legal</option>
+      <option value="harbor-claims">harbor-claims</option>
+    </select>
+    <input id="key" type="password" placeholder="Tenant API key" aria-label="Tenant API key" autocomplete="off" required>
+    <button class="primary" type="submit">Open queue</button>
+  </form>
+</header>
+<main>
+  <section class="card">
+    <div class="toolbar">
+      <select id="filter" aria-label="Filter">
+        <option value="review">Needs review</option>
+        <option value="pending">All pending</option>
+        <option value="filed">Filed</option>
+        <option value="all">Everything</option>
+      </select>
+      <button id="refresh" type="button">Refresh</button>
+      <span class="count" id="count"></span>
+    </div>
+    <div id="list"><div class="empty">Enter a tenant API key to load its queue.<br>
+      <span class="muted">Demo keys are in <code>intakeguard/sql/seed.sql</code>.</span></div></div>
+  </section>
+  <aside class="card"><div class="detail" id="detail"><div class="empty">Select a document.</div></div></aside>
+</main>
+<script>
+// The key lives only in this variable: never in localStorage, never in the URL.
+let apiKey = "", tenant = "", selected = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function api(path, options = {}) {
+  const r = await fetch(path, {...options, headers: {Authorization: "Bearer " + apiKey}});
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+  return body;
+}
+
+function pills(d) {
+  if (d.status === "filed") return '<span class="pill filed">filed</span>';
+  if (d.status !== "pending") return `<span class="pill filed">${esc(d.status)}</span>`;
+  if (!d.needs_review) return '<span class="pill ready">ready to approve</span>';
+  return d.review_reasons.map((r) =>
+    `<span class="pill ${r === "possible_prompt_injection" ? "inject" : "review"}">${esc(r.replaceAll("_", " "))}</span>`).join("");
+}
+
+async function loadList() {
+  const f = $("filter").value;
+  const q = f === "review" ? "?needs_review=true&status=pending" : f === "all" ? "" : "?status=" + f;
+  try {
+    const docs = await api(`/v1/tenants/${encodeURIComponent(tenant)}/documents${q}`);
+    $("count").textContent = `${docs.length} document${docs.length === 1 ? "" : "s"}`;
+    if (!docs.length) { $("list").innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+    $("list").innerHTML = `<table><thead><tr><th>Document</th><th>Type</th><th>Claimant</th><th>Status</th></tr></thead><tbody>${
+      docs.map((d) => `<tr data-id="${esc(d.document_id)}" class="${d.document_id === selected ? "sel" : ""}">
+        <td><b>${esc(d.document_id)}</b><br><span class="muted">${esc(d.document_date || "no date")}</span></td>
+        <td>${esc(d.document_type || "—")}</td><td>${esc(d.claimant_id || "—")}</td><td>${pills(d)}</td></tr>`).join("")
+    }</tbody></table>`;
+    document.querySelectorAll("tbody tr").forEach((tr) => tr.onclick = () => loadDetail(tr.dataset.id));
+  } catch (e) {
+    $("list").innerHTML = `<div class="empty msg err">${esc(e.message)}</div>`;
+    $("count").textContent = "";
+  }
+}
+
+async function loadDetail(id, message = "") {
+  selected = id;
+  document.querySelectorAll("tbody tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.id === id));
+  try {
+    const d = await api(`/v1/tenants/${encodeURIComponent(tenant)}/documents/${encodeURI(id)}`);
+    const canApprove = d.status === "pending" && d.claimant_id;
+    $("detail").innerHTML = `
+      <h2>${esc(d.document_id)}</h2><div>${pills(d)}</div>
+      <dl>
+        <dt>Type</dt><dd>${esc(d.document_type || "—")}</dd>
+        <dt>Claimant</dt><dd>${esc(d.claimant_id || "— (none confirmed)")}</dd>
+        <dt>Date</dt><dd>${esc(d.document_date || "—")}</dd>
+        <dt>Extractor</dt><dd>${esc(d.extractor || "—")} · ${d.attempts} attempt${d.attempts === 1 ? "" : "s"}</dd>
+        <dt>Injection flag</dt><dd>${d.injection_suspected ? '<span class="pill inject">suspected</span>' : "no"}</dd>
+      </dl>
+      <div class="actions">
+        <button class="primary" id="approve" ${canApprove ? "" : "disabled"}>
+          ${d.status === "filed" ? "Filed" : "Approve & file"}</button>
+        <span class="msg ${message.startsWith("Error") ? "err" : "ok"}">${esc(message ||
+          (!d.claimant_id && d.status === "pending" ? "Needs a confirmed claimant before it can be filed." : ""))}</span>
+      </div>
+      <b>Audit trail</b>
+      <ol class="audit">${d.audit.map((a) => `<li><b>${esc(a.event)}</b> by ${esc(a.actor)}
+        <span class="muted">${esc(a.at)}</span></li>`).join("")}</ol>`;
+    const btn = $("approve");
+    if (btn && canApprove) btn.onclick = approve;
+  } catch (e) {
+    $("detail").innerHTML = `<div class="empty msg err">${esc(e.message)}</div>`;
+  }
+}
+
+async function approve() {
+  $("approve").disabled = true;
+  try {
+    const r = await api(`/v1/tenants/${encodeURIComponent(tenant)}/documents/${encodeURI(selected)}/approve`,
+                        {method: "POST"});
+    await loadList();
+    await loadDetail(selected, `Filed to ${r.claimant_id}'s case file.`);
+  } catch (e) {
+    await loadDetail(selected, "Error: " + e.message);
+  }
+}
+
+$("login").onsubmit = (ev) => {
+  ev.preventDefault();
+  apiKey = $("key").value.trim(); tenant = $("tenant").value; selected = null;
+  $("detail").innerHTML = '<div class="empty">Select a document.</div>';
+  loadList();
+};
+$("filter").onchange = loadList;
+$("refresh").onclick = loadList;
+</script>
+</body>
+</html>

@@ -18,6 +18,10 @@ staff ──API key──▶ review queue ──────┘          guardra
             approve ──▶ case file + audit log
 ```
 
+![Review queue: each document shows why it needs a person (prompt injection, no claimant, impossible date, claimant from another tenant)](docs/review-queue.png)
+
+*The review queue at `/review`: the model proposed these fields; guardrails flagged the doubtful ones; a person approves.*
+
 ## What it demonstrates
 
 | Area | How |
@@ -26,12 +30,12 @@ staff ──API key──▶ review queue ──────┘          guardra
 | **Guardrails** | The model only proposes. `guardrails.py` validates types, enum values, real calendar dates, and that the claimant belongs to *this* tenant (catches hallucinated IDs). Invalid answers are nulled and sent to review with machine-readable reasons. |
 | **Prompt-injection defence in depth** | The extractor sees document text only, never tenant data or secrets. Text is fenced in `<document>` tags with a closing-tag escape neutralised; the system prompt says the content is data. A detector flags injection-like text for mandatory human review. Nothing is filed without approval. |
 | **Evals as a release gate** | Two labelled sets of 30 documents, tagged by scenario. *core* (wrong-tenant claimants, impossible dates, leap days, injections) gates CI at 90% per field. *hard* (OCR noise, synonyms, natural-language and slash dates, unlabelled IDs, an injection the detector misses) is where rules fail and models are compared. Both run through the exact code path the worker uses. `python -m evals.compare` produces an accuracy / latency / tokens / cost table per model. |
-| **Human in the loop** | Review queue (`needs_review=true`) with reasons, idempotent approval, full audit trail per document. |
+| **Human in the loop** | A review page at `/review` (one static file, no build step, API key held in memory only, strict CSP) shows the queue with reasons, the audit trail and an Approve button; approval is idempotent. |
 | **Reliability** | Lease-based work claiming (two workers never extract the same document; a crashed worker's lease expires and is reclaimed), fencing so a stale worker can't overwrite, poison documents parked after N attempts, idempotent intake and approval enforced by primary keys rather than racy checks. |
 | **Security** | HMAC-SHA256 webhooks with a timestamp bound into the MAC (replay protection), constant-time comparison, per-tenant API keys stored as hashes, cross-tenant requests answered as 404, body size limit, strict ID format. |
 | **Multi-tenancy** | Tenant is part of every key. `C-101` exists in both demo tenants as two different people, and tests prove they never mix. |
 | **Observability** | Structured JSON logs with a request id (never document text or secrets), Prometheus-style `/metrics` with status gauges and review-queue depth, `/healthz`. |
-| **Test quality** | 97 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
+| **Test quality** | 99 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
 | **Agentic engineering** | `CLAUDE.md`/`AGENTS.md`, a written contract, and a Claude Code `PreToolUse` hook that gives each agent role a write scope and keeps the extractor author and the eval author from seeing each other's files. |
 | **Delivery** | GitHub Actions on Python 3.11–3.13 (lint, tests, eval gate, mutation check), eval report as a build artifact, non-root Docker image with a health check and a container smoke test. |
 
@@ -41,12 +45,13 @@ staff ──API key──▶ review queue ──────┘          guardra
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python -m pytest -q                  # 97 tests
+python -m pytest -q                  # 99 tests
 python -m evals                      # eval gate
 python scripts/mutation_check.py     # prove the tests guard each protection
 
 uvicorn intakeguard.api:create_app --factory --port 8000 &
 scripts/demo.sh                      # deliver 3 docs, run the worker, review queue, approve, audit, metrics
+# then open http://127.0.0.1:8000/review and use the demo key nw-demo-api-key
 ```
 
 Docker:
@@ -136,7 +141,8 @@ fixtures, so never reuse them.
 
 ```
 intakeguard/
-  api.py            FastAPI app: webhook, review routes, health, metrics
+  api.py            FastAPI app: webhook, review routes, review page, health, metrics
+  static/           review.html (the human-in-the-loop review page)
   worker.py         lease-based extraction worker (python -m intakeguard.worker --once | --loop)
   guardrails.py     validation of every model answer + injection flag (shared by worker and evals)
   extractors/       rules.py (offline), llm.py (Anthropic + OpenAI-compatible), base.py (protocol)
@@ -144,7 +150,7 @@ intakeguard/
   db.py, sql/       SQLite connection, schema, synthetic seed
   metrics.py, logging_setup.py
 evals/              dataset.jsonl + dataset_hard.jsonl (30 tagged documents each), runner, compare.py
-tests/              97 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
+tests/              99 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
 scripts/            demo.sh, mutation_check.py
 .claude/            settings.json (permissions) + hooks/guard.py + roles.json (multi-agent scopes)
 ```

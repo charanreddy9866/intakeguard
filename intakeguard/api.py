@@ -7,10 +7,11 @@ import re
 import sqlite3
 import uuid
 from contextlib import closing
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from intakeguard import db, metrics
 from intakeguard.config import get_settings
@@ -20,6 +21,7 @@ from intakeguard.security import hash_api_key, verify_signature
 logger = logging.getLogger("intakeguard.api")
 
 MAX_BODY_BYTES = 1_000_000
+REVIEW_PAGE = Path(__file__).resolve().parent / "static" / "review.html"
 DOCUMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 STATUSES = {"received", "processing", "pending", "filed"}
 
@@ -187,6 +189,16 @@ def create_app(db_path: str | None = None) -> FastAPI:
                    audit=[{"event": t["event"], "actor": t["actor"], "detail": json.loads(t["detail"]),
                            "at": t["at"]} for t in trail])
         return out
+
+    # ---------- review UI ----------
+
+    @app.get("/review", response_class=HTMLResponse, include_in_schema=False)
+    def review_page():
+        # A static page that calls the same authenticated API; it holds no data and no secrets itself.
+        return HTMLResponse(REVIEW_PAGE.read_text(encoding="utf-8"),
+                            headers={"Content-Security-Policy": "default-src 'self'; style-src 'unsafe-inline'; "
+                                     "script-src 'unsafe-inline'; frame-ancestors 'none'",
+                                     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"})
 
     # ---------- ops ----------
 

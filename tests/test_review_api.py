@@ -104,3 +104,10 @@ def test_document_detail_has_audit_trail(client, process_once):
     detail = client.get(f"/v1/tenants/{NW}/documents/D-1", headers=auth()).json()
     assert [e["event"] for e in detail["audit"]] == ["received", "extracted", "filed"]
     assert detail["extractor"] == "rules" and detail["attempts"] == 1
+
+
+def test_review_page_is_served_with_security_headers(client):
+    r = client.get("/review")
+    assert r.status_code == 200 and "Review queue" in r.text
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+    assert "localStorage" not in r.text.split("<script>")[1].split("//", 1)[0]  # key is never persisted

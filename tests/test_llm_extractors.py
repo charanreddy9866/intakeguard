@@ -72,3 +72,12 @@ def test_build_extractor_validates_config(monkeypatch):
         build_extractor("openai")
     with pytest.raises(ValueError):
         build_extractor("nope")
+
+
+def test_gemini_uses_the_openai_compatible_endpoint(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    ext = build_extractor("gemini", model="gemini-test")
+    assert ext.name == "gemini" and ext.model == "gemini-test" and ext.api_key == "g-key"
+    assert ext.base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    with pytest.raises(ValueError):
+        build_extractor("gemini")

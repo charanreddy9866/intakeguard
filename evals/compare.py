@@ -5,7 +5,7 @@
 
 Each run is `kind[:model][@input_price/output_price]`, prices in USD per million tokens (optional; check your
 provider's current price list). Results go to stdout and to evals/results.md (override with --out).
-API keys come from ANTHROPIC_API_KEY / OPENAI_API_KEY. Never commit them.
+API keys come from ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY. Never commit them.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def parse_spec(spec: str) -> RunSpec:
     if prices:
         a, _, b = prices.partition("/")
         price_in, price_out = float(a), float(b)
-    if kind not in ("rules", "anthropic", "openai"):
+    if kind not in ("rules", "anthropic", "openai", "gemini"):
         raise ValueError(f"unknown extractor kind in {spec!r}")
     return RunSpec(kind, model or None, price_in, price_out)
 

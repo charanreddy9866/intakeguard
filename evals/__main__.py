@@ -79,8 +79,8 @@ def run(rows: list[dict], extractor_kind: str = "rules", model: str | None = Non
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m evals")
-    parser.add_argument("--extractor", default="rules", choices=["rules", "anthropic", "openai"])
-    parser.add_argument("--model", help="model name for anthropic/openai (overrides INTAKEGUARD_LLM_MODEL)")
+    parser.add_argument("--extractor", default="rules", choices=["rules", "anthropic", "openai", "gemini"])
+    parser.add_argument("--model", help="model name for anthropic/openai/gemini (overrides INTAKEGUARD_LLM_MODEL)")
     parser.add_argument("--dataset", default="core", help="core, hard, or a path to a .jsonl file")
     parser.add_argument("--threshold", type=float, default=0.90)
     parser.add_argument("--report", type=Path, help="write the full JSON report here")

@@ -22,7 +22,7 @@ staff ──API key──▶ review queue ──────┘          guardra
 
 | Area | How |
 |---|---|
-| **LLM integration** | Anthropic Messages API with a forced tool call (structured output) and OpenAI-compatible JSON mode, over plain `httpx`. Temperature 0, timeouts, retries with exponential backoff on 429/5xx only. |
+| **LLM integration** | Anthropic Messages API with a forced tool call (structured output); OpenAI and Google Gemini through the OpenAI-compatible JSON mode; all over plain `httpx`. Temperature 0, timeouts, retries with exponential backoff on 429/5xx only. |
 | **Guardrails** | The model only proposes. `guardrails.py` validates types, enum values, real calendar dates, and that the claimant belongs to *this* tenant (catches hallucinated IDs). Invalid answers are nulled and sent to review with machine-readable reasons. |
 | **Prompt-injection defence in depth** | The extractor sees document text only, never tenant data or secrets. Text is fenced in `<document>` tags with a closing-tag escape neutralised; the system prompt says the content is data. A detector flags injection-like text for mandatory human review. Nothing is filed without approval. |
 | **Evals as a release gate** | Two labelled sets of 30 documents, tagged by scenario. *core* (wrong-tenant claimants, impossible dates, leap days, injections) gates CI at 90% per field. *hard* (OCR noise, synonyms, natural-language and slash dates, unlabelled IDs, an injection the detector misses) is where rules fail and models are compared. Both run through the exact code path the worker uses. `python -m evals.compare` produces an accuracy / latency / tokens / cost table per model. |
@@ -31,7 +31,7 @@ staff ──API key──▶ review queue ──────┘          guardra
 | **Security** | HMAC-SHA256 webhooks with a timestamp bound into the MAC (replay protection), constant-time comparison, per-tenant API keys stored as hashes, cross-tenant requests answered as 404, body size limit, strict ID format. |
 | **Multi-tenancy** | Tenant is part of every key. `C-101` exists in both demo tenants as two different people, and tests prove they never mix. |
 | **Observability** | Structured JSON logs with a request id (never document text or secrets), Prometheus-style `/metrics` with status gauges and review-queue depth, `/healthz`. |
-| **Test quality** | 96 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
+| **Test quality** | 97 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
 | **Agentic engineering** | `CLAUDE.md`/`AGENTS.md`, a written contract, and a Claude Code `PreToolUse` hook that gives each agent role a write scope and keeps the extractor author and the eval author from seeing each other's files. |
 | **Delivery** | GitHub Actions on Python 3.11–3.13 (lint, tests, eval gate, mutation check), eval report as a build artifact, non-root Docker image with a health check and a container smoke test. |
 
@@ -41,7 +41,7 @@ staff ──API key──▶ review queue ──────┘          guardra
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python -m pytest -q                  # 96 tests
+python -m pytest -q                  # 97 tests
 python -m evals                      # eval gate
 python scripts/mutation_check.py     # prove the tests guard each protection
 
@@ -60,6 +60,7 @@ Use a real model (optional; everything works offline with the rules extractor):
 ```bash
 export INTAKEGUARD_EXTRACTOR=anthropic ANTHROPIC_API_KEY=...        # default model: claude-haiku-5-5
 export INTAKEGUARD_EXTRACTOR=openai OPENAI_API_KEY=... INTAKEGUARD_LLM_MODEL=<model>   # OPENAI_BASE_URL for compatible APIs
+export INTAKEGUARD_EXTRACTOR=gemini GEMINI_API_KEY=... INTAKEGUARD_LLM_MODEL=<gemini-model>
 python -m evals --extractor anthropic   # compare a provider against the same labelled set
 ```
 
@@ -107,10 +108,10 @@ to [`evals/results.md`](evals/results.md).
 ### Run the comparison against real models
 
 ```bash
-export ANTHROPIC_API_KEY=...          # and/or OPENAI_API_KEY; never commit keys
+export GEMINI_API_KEY=...             # and/or ANTHROPIC_API_KEY, OPENAI_API_KEY; never commit keys
 python -m evals.compare rules \
+    gemini:<gemini-model>@<in>/<out> \
     anthropic:claude-haiku-5-5@<in>/<out> \
-    anthropic:claude-sonnet-5-5@<in>/<out> \
     openai:<model>@<in>/<out>
 ```
 
@@ -143,7 +144,7 @@ intakeguard/
   db.py, sql/       SQLite connection, schema, synthetic seed
   metrics.py, logging_setup.py
 evals/              dataset.jsonl + dataset_hard.jsonl (30 tagged documents each), runner, compare.py
-tests/              96 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
+tests/              97 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
 scripts/            demo.sh, mutation_check.py
 .claude/            settings.json (permissions) + hooks/guard.py + roles.json (multi-agent scopes)
 ```

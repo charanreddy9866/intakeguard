@@ -4,6 +4,9 @@
 
 **Multi-tenant document intake with guarded LLM extraction, evals as a CI gate, and human-in-the-loop approval.**
 
+**Live demo: [intakeguard-demo.onrender.com](https://intakeguard-demo.onrender.com)** (synthetic data; demo key
+`nw-demo-api-key`; the free instance sleeps when idle, so the first load can take about a minute).
+
 Scanned mail arrives from a vendor as text through a signed webhook. A worker asks an extractor (a deterministic
 rules engine, Claude, or any OpenAI-compatible model) what each document is and whose it is. Code validates every
 answer, flags anything doubtful, and a person approves before a document is filed to a claimant's case file.

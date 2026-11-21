@@ -1,0 +1,36 @@
+{
+  "_protected": ["CLAUDE.md", "AGENTS.md", "docs/*", ".claude/*", ".github/*", "scripts/*", "intakeguard/sql/*",
+                 "pyproject.toml", "requirements.txt"],
+  "service": {
+    "write": ["intakeguard/api.py", "intakeguard/db.py", "intakeguard/security.py", "intakeguard/metrics.py",
+              "intakeguard/logging_setup.py", "intakeguard/config.py", "intakeguard/__init__.py"],
+    "no_read": ["tests/*", "evals/dataset.jsonl"],
+    "forbid_tokens": ["wt-", "dataset.jsonl"]
+  },
+  "extraction": {
+    "write": ["intakeguard/worker.py", "intakeguard/guardrails.py", "intakeguard/extractors/*"],
+    "no_read": ["evals/*", "tests/*"],
+    "forbid_tokens": ["wt-", "evals", "dataset.jsonl"]
+  },
+  "evals": {
+    "write": ["evals/*"],
+    "no_read": ["intakeguard/extractors/*", "intakeguard/worker.py", "tests/*"],
+    "forbid_tokens": ["wt-", "extractors", "rules.py", "llm.py"]
+  },
+  "tests": {
+    "write": ["tests/*"],
+    "no_read": ["intakeguard/*", "evals/*"],
+    "forbid_tokens": ["wt-"]
+  },
+  "integrator": {
+    "write": ["intakeguard/*", "evals/*", "tests/*"],
+    "no_read": [],
+    "forbid_tokens": ["wt-"],
+    "git_full": true
+  },
+  "reviewer": {
+    "write": ["REVIEW.md"],
+    "no_read": [],
+    "forbid_tokens": ["wt-"]
+  }
+}

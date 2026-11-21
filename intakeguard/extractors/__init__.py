@@ -8,19 +8,21 @@ from intakeguard.extractors.rules import RulesExtractor
 __all__ = ["DOCUMENT_TYPES", "Extractor", "TransientExtractorError", "RulesExtractor", "build_extractor"]
 
 
-def build_extractor(kind: str | None = None) -> Extractor:
+def build_extractor(kind: str | None = None, model: str | None = None) -> Extractor:
+    """`model` overrides INTAKEGUARD_LLM_MODEL (used by evals to compare several models)."""
     settings = get_settings()
     kind = kind or settings.extractor
+    llm_model = model or settings.llm_model
     if kind == "rules":
         return RulesExtractor()
     if kind == "anthropic":
         from intakeguard.extractors.llm import AnthropicExtractor
-        return AnthropicExtractor(model=settings.llm_model or "claude-haiku-5-5",
+        return AnthropicExtractor(model=llm_model or "claude-haiku-5-5",
                                   timeout=settings.llm_timeout_seconds)
     if kind == "openai":
         from intakeguard.extractors.llm import OpenAICompatibleExtractor
-        if not settings.llm_model:
+        if not llm_model:
             raise ValueError("set INTAKEGUARD_LLM_MODEL for the openai extractor")
-        return OpenAICompatibleExtractor(model=settings.llm_model,
+        return OpenAICompatibleExtractor(model=llm_model,
                                          timeout=settings.llm_timeout_seconds)
     raise ValueError(f"unknown extractor: {kind}")

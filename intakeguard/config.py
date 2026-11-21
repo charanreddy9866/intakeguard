@@ -15,6 +15,7 @@ class Settings:
     llm_model: str | None
     llm_timeout_seconds: float
     llm_retries: int
+    demo: bool
 
 
 def get_settings() -> Settings:
@@ -27,4 +28,5 @@ def get_settings() -> Settings:
         llm_model=os.environ.get("INTAKEGUARD_LLM_MODEL") or None,
         llm_timeout_seconds=float(os.environ.get("INTAKEGUARD_LLM_TIMEOUT", "30")),
         llm_retries=int(os.environ.get("INTAKEGUARD_LLM_RETRIES", "2")),
+        demo=os.environ.get("INTAKEGUARD_DEMO", "").lower() in ("1", "true", "yes"),
     )

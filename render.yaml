@@ -1,0 +1,12 @@
+# One-click deploy on Render (free plan): New + > Blueprint > select this repo.
+services:
+  - type: web
+    name: intakeguard-demo
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: INTAKEGUARD_DEMO
+        value: "1"
+      - key: INTAKEGUARD_DB
+        value: /tmp/intakeguard.db

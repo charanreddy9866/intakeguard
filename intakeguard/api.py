@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 from intakeguard import db, metrics
 from intakeguard.config import get_settings
@@ -24,6 +24,11 @@ MAX_BODY_BYTES = 1_000_000
 REVIEW_PAGE = Path(__file__).resolve().parent / "static" / "review.html"
 DOCUMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 STATUSES = {"received", "processing", "pending", "filed"}
+DEMO_BANNER = (
+    '<div class="demo">Live demo with synthetic data. Use the public demo key <code>nw-demo-api-key</code> '
+    '(northwind-legal) or <code>hc-demo-api-key</code> (harbor-claims). Data resets when the server restarts. '
+    '<a href="https://github.com/charanreddy9866/intakeguard">Source on GitHub</a> · <a href="/docs">API docs</a></div>'
+)
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -31,6 +36,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
     path = db_path or get_settings().db_path
     with closing(db.connect(path)) as conn:
         db.init_db(conn)
+    demo = get_settings().demo
+    if demo:
+        from intakeguard.demo import seed
+        seed(path)
 
     app = FastAPI(title="IntakeGuard", version="1.0.0",
                   description="Multi-tenant document intake with guarded AI extraction and human approval.")
@@ -195,10 +204,17 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get("/review", response_class=HTMLResponse, include_in_schema=False)
     def review_page():
         # A static page that calls the same authenticated API; it holds no data and no secrets itself.
-        return HTMLResponse(REVIEW_PAGE.read_text(encoding="utf-8"),
+        page = REVIEW_PAGE.read_text(encoding="utf-8")
+        if demo:
+            page = page.replace("<!--DEMO-BANNER-->", DEMO_BANNER)
+        return HTMLResponse(page,
                             headers={"Content-Security-Policy": "default-src 'self'; style-src 'unsafe-inline'; "
                                      "script-src 'unsafe-inline'; frame-ancestors 'none'",
                                      "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"})
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        return RedirectResponse("/review")
 
     # ---------- ops ----------
 

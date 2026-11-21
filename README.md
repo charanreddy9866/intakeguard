@@ -35,9 +35,18 @@ staff ──API key──▶ review queue ──────┘          guardra
 | **Security** | HMAC-SHA256 webhooks with a timestamp bound into the MAC (replay protection), constant-time comparison, per-tenant API keys stored as hashes, cross-tenant requests answered as 404, body size limit, strict ID format. |
 | **Multi-tenancy** | Tenant is part of every key. `C-101` exists in both demo tenants as two different people, and tests prove they never mix. |
 | **Observability** | Structured JSON logs with a request id (never document text or secrets), Prometheus-style `/metrics` with status gauges and review-queue depth, `/healthz`. |
-| **Test quality** | 99 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
+| **Test quality** | 102 tests including concurrency races run five times each. `scripts/mutation_check.py` removes each protection in a scratch copy and proves a test fails: **8/8 caught**. |
 | **Agentic engineering** | `CLAUDE.md`/`AGENTS.md`, a written contract, and a Claude Code `PreToolUse` hook that gives each agent role a write scope and keeps the extractor author and the eval author from seeing each other's files. |
 | **Delivery** | GitHub Actions on Python 3.11–3.13 (lint, tests, eval gate, mutation check), eval report as a build artifact, non-root Docker image with a health check and a container smoke test. |
+
+## Deploy a live demo
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/charanreddy9866/intakeguard)
+
+`render.yaml` deploys the Docker image on Render's free plan with `INTAKEGUARD_DEMO=1`, which seeds ten synthetic
+deliveries through the real worker and guardrails, so the review queue at `/` is populated on first visit. Demo keys:
+`nw-demo-api-key` (northwind-legal) and `hc-demo-api-key` (harbor-claims). The SQLite file lives in `/tmp`, so the
+demo resets whenever the free instance restarts.
 
 ## Quick start
 
@@ -45,7 +54,7 @@ staff ──API key──▶ review queue ──────┘          guardra
 python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-python -m pytest -q                  # 99 tests
+python -m pytest -q                  # 102 tests
 python -m evals                      # eval gate
 python scripts/mutation_check.py     # prove the tests guard each protection
 
@@ -150,7 +159,7 @@ intakeguard/
   db.py, sql/       SQLite connection, schema, synthetic seed
   metrics.py, logging_setup.py
 evals/              dataset.jsonl + dataset_hard.jsonl (30 tagged documents each), runner, compare.py
-tests/              99 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
+tests/              102 tests: webhook, auth, worker races and recovery, review API, LLM adapters, end to end
 scripts/            demo.sh, mutation_check.py
 .claude/            settings.json (permissions) + hooks/guard.py + roles.json (multi-agent scopes)
 ```

@@ -34,7 +34,8 @@ def load(path: Path | str = DATASET) -> list[dict]:
         return [json.loads(line) for line in fh if line.strip()]
 
 
-def run(rows: list[dict], extractor_kind: str = "rules", model: str | None = None, extractor=None) -> dict:
+def run(rows: list[dict], extractor_kind: str = "rules", model: str | None = None, extractor=None,
+        delay: float = 0.0, sleep=time.sleep) -> dict:
     extractor = extractor or build_extractor(extractor_kind, model)
     extract = with_retries(extractor.extract, retries=2)
     with closing(db.connect(":memory:")) as conn:
@@ -43,11 +44,14 @@ def run(rows: list[dict], extractor_kind: str = "rules", model: str | None = Non
 
     correct: dict[str, int] = defaultdict(int)
     by_tag: dict[str, list[bool]] = defaultdict(list)
-    misses, latencies = [], []
-    for row in rows:
+    misses, latencies, errors = [], [], 0
+    for i, row in enumerate(rows):
+        if delay and i:
+            sleep(delay)  # stay under provider rate limits (free tiers allow only a few requests per minute)
         start = time.perf_counter()
         result = extract_and_check(row["text"], claimants[row["tenant"]], extract)
         latencies.append(time.perf_counter() - start)
+        errors += any(r.startswith("extractor_error") for r in result.reasons)
         got = {**result.fields(), "needs_review": result.needs_review}
         all_ok = True
         for field in GATED:
@@ -68,6 +72,7 @@ def run(rows: list[dict], extractor_kind: str = "rules", model: str | None = Non
         "model": getattr(extractor, "model", None),
         "usage": usage,
         "documents": n,
+        "extractor_errors": errors,
         "accuracy": {f: round(correct[f] / n, 4) for f in GATED},
         "exact_match": round(sum(1 for r in rows if r["id"] not in {m["id"] for m in misses}) / n, 4),
         "by_tag": {t: f"{sum(v)}/{len(v)}" for t, v in sorted(by_tag.items())},
@@ -84,9 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset", default="core", help="core, hard, or a path to a .jsonl file")
     parser.add_argument("--threshold", type=float, default=0.90)
     parser.add_argument("--report", type=Path, help="write the full JSON report here")
+    parser.add_argument("--delay", type=float, default=0.0, help="seconds to wait between documents (rate limits)")
     args = parser.parse_args(argv)
 
-    report = run(load(args.dataset), args.extractor, args.model)
+    report = run(load(args.dataset), args.extractor, args.model, delay=args.delay)
     model = f" ({report['model']})" if report["model"] else ""
     print(f"extractor: {report['extractor']}{model}   dataset: {args.dataset}   documents: {report['documents']}")
     for field, acc in report["accuracy"].items():
@@ -96,10 +102,14 @@ def main(argv: list[str] | None = None) -> int:
     if report["usage"]["calls"]:
         u = report["usage"]
         print(f"  tokens: {u['input_tokens']} in / {u['output_tokens']} out over {u['calls']} calls")
+    if report["extractor_errors"]:
+        print(f"  WARNING: {report['extractor_errors']} documents got no answer from the extractor "
+              "(see reasons below); accuracy is not meaningful until this is 0")
     print(f"  latency p50 {report['latency_ms_p50']} ms, p95 {report['latency_ms_p95']} ms")
     print("by tag: " + ", ".join(f"{t} {v}" for t, v in report["by_tag"].items()))
     for miss in report["misses"]:
-        print(f"  MISS {miss['id']} {miss['field']}: expected {miss['expected']!r}, got {miss['got']!r}")
+        print(f"  MISS {miss['id']} {miss['field']}: expected {miss['expected']!r}, got {miss['got']!r} "
+              f"{miss['reasons']}")
     if args.report:
         args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
     failed = [f for f, a in report["accuracy"].items() if a < args.threshold]

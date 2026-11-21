@@ -56,4 +56,19 @@ def test_parse_spec_and_cost():
 def test_table_renders_one_row_per_run():
     report = run(load("core"), "rules")
     md = table([(parse_spec("rules"), "core", report)])
-    assert md.count("\n") == 2 and "`rules` | core | 100%" in md
+    assert md.count("\n") == 2 and "`rules` | core | 100%" in md and "| 0/30 |" in md
+
+
+def test_extractor_errors_are_counted_and_delay_is_applied():
+    slept = []
+
+    def failing(_text):
+        raise RuntimeError("429")
+
+    class Fake:
+        name, model, usage = "fake", None, None
+        extract = staticmethod(failing)
+
+    report = run(load("core"), "fake", extractor=Fake(), delay=2.0, sleep=slept.append)
+    assert report["extractor_errors"] == 30
+    assert slept == [2.0] * 29
